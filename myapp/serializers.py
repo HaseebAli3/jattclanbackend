@@ -132,5 +132,9 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         bio = validated_data.pop('bio', '')
         profile_picture = validated_data.pop('profile_picture', None)
         user = User.objects.create_user(**validated_data)
-        UserProfile.objects.create(user=user, bio=bio, profile_picture=profile_picture)
+        # Use get_or_create to handle existing profiles
+        UserProfile.objects.get_or_create(
+            user=user,
+            defaults={'bio': bio, 'profile_picture': profile_picture}
+        )
         return user
