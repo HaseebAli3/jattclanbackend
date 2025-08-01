@@ -10,6 +10,7 @@ urlpatterns = [
     path('categories/', views.CategoryListView.as_view(), name='category_list'),
     path('articles/', views.ArticleListView.as_view(), name='article_list'),
     path('articles/<int:pk>/', views.ArticleDetailView.as_view(), name='article_detail'),
+    path('profile/<int:id>/', views.UserProfileView.as_view(), name='user_profile'),
 path('comments/create/', views.CommentCreateView.as_view(), name='comment_create'),
 path('comments/<int:pk>/', views.CommentDetailView.as_view(), name='comment_detail'),
     path('comments/', views.CommentListView.as_view(), name='comment_list'),

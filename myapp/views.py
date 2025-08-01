@@ -8,7 +8,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.exceptions import PermissionDenied
 from .models import Category, Article, Comment, Like, UserProfile
-from .serializers import CategorySerializer, ArticleSerializer, CommentSerializer, UserRegistrationSerializer, UserProfileSerializer, UserSerializer
+from rest_framework.parsers import MultiPartParser, FormParser
+from .serializers import CategorySerializer, ArticleSerializer, CommentSerializer, UserRegistrationSerializer, UserProfileSerializer, UserSerializer,ProfileUpdateSerializer
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 10
@@ -28,7 +29,11 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             'profile': UserProfileSerializer(profile).data
         }
         return response
-
+class UserProfileView(generics.RetrieveAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_field = 'id'
 class RegisterView(APIView):
     def post(self, request):
         serializer = UserRegistrationSerializer(data=request.data)
@@ -48,23 +53,40 @@ class RegisterView(APIView):
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 class ProfileView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
 
     def get(self, request):
-        user = request.user
-        profile, created = UserProfile.objects.get_or_create(user=user)
-        serializer = UserSerializer(user)
+        profile = request.user.profile
+        serializer = UserSerializer(request.user, context={'request': request})
         return Response(serializer.data)
 
     def put(self, request):
-        user = request.user
-        profile, created = UserProfile.objects.get_or_create(user=user)
-        serializer = UserProfileSerializer(profile, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(UserSerializer(user).data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        profile = request.user.profile
+        
+        # Handle profile picture
+        if 'profile_picture' in request.data:
+            if request.data['profile_picture'] == 'null':
+                if profile.profile_picture:
+                    profile.profile_picture.delete()
+                profile.profile_picture = None
+            else:
+                if profile.profile_picture:
+                    profile.profile_picture.delete()
+                profile.profile_picture = request.data['profile_picture']
+        
+        # Handle bio
+        if 'bio' in request.data:
+            profile.bio = request.data['bio']
+        
+        profile.save()
+        
+        serializer = UserSerializer(request.user, context={'request': request})
+        return Response(serializer.data)
+
+
 
 class CategoryListView(generics.ListCreateAPIView):
     queryset = Category.objects.all()
@@ -159,10 +181,24 @@ class LikeView(APIView):
     def post(self, request):
         article_id = request.data.get('article_id')
         comment_id = request.data.get('comment_id')
+        
         if article_id:
-            Like.objects.get_or_create(user=request.user, article_id=article_id)
+            like, created = Like.objects.get_or_create(
+                user=request.user,
+                article_id=article_id,
+                defaults={'comment': None}
+            )
+            if not created:
+                like.delete()
         elif comment_id:
-            Like.objects.get_or_create(user=request.user, comment_id=comment_id)
+            like, created = Like.objects.get_or_create(
+                user=request.user,
+                comment_id=comment_id,
+                defaults={'article': None}
+            )
+            if not created:
+                like.delete()
+        
         return Response(status=status.HTTP_201_CREATED)
 
 class SuspendUserView(APIView):

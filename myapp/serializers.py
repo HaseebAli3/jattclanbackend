@@ -3,17 +3,47 @@ from .models import Category, Article, Comment, Like, UserProfile
 from django.contrib.auth.models import User
 
 class UserProfileSerializer(serializers.ModelSerializer):
+    profile_picture = serializers.SerializerMethodField()
+    
     class Meta:
         model = UserProfile
         fields = ['bio', 'profile_picture']
+    
+    def get_profile_picture(self, obj):
+        if obj.profile_picture:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.profile_picture.url)
+            return f"http://localhost:8000{obj.profile_picture.url}"
+        return None
+    
+    def get_profile_picture(self, obj):
+        if obj.profile_picture:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.profile_picture.url)
+            # Fallback if request context is missing
+            try:
+                from django.conf import settings
+                base_url = getattr(settings, 'BASE_URL', 'http://localhost:8000')
+                return f"{base_url}{obj.profile_picture.url}"
+            except:
+                return None
+        return None
 
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfile
+        fields = ['bio', 'profile_picture']
+        extra_kwargs = {
+            'profile_picture': {'required': False}
+        }
 class UserSerializer(serializers.ModelSerializer):
     profile = UserProfileSerializer(read_only=True)
 
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'is_staff', 'profile']
-
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
