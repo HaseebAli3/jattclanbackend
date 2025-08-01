@@ -9,7 +9,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.exceptions import PermissionDenied
 from .models import Category, Article, Comment, Like, UserProfile
 from rest_framework.parsers import MultiPartParser, FormParser
-from .serializers import CategorySerializer, ArticleSerializer, CommentSerializer, UserRegistrationSerializer, UserProfileSerializer, UserSerializer,ProfileUpdateSerializer
+from .serializers import CategorySerializer, ArticleSerializer, CommentSerializer, UserRegistrationSerializer, UserProfileSerializer, UserSerializer,ProfileUpdateSerializer, CommentCreateSerializer
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 10
@@ -132,13 +132,23 @@ class ArticleDetailView(generics.RetrieveUpdateDestroyAPIView):
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
 
+# Update the CommentCreateView
 class CommentCreateView(generics.CreateAPIView):
     queryset = Comment.objects.all()
-    serializer_class = CommentSerializer
+    serializer_class = CommentCreateSerializer  # Use the new serializer
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except serializers.ValidationError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 class CommentListView(generics.ListAPIView):
     serializer_class = CommentSerializer
@@ -146,9 +156,15 @@ class CommentListView(generics.ListAPIView):
 
     def get_queryset(self):
         article_id = self.request.query_params.get('article')
+        user_id = self.request.query_params.get('user')
+        
+        queryset = Comment.objects.all()
         if article_id:
-            return Comment.objects.filter(article_id=article_id)
-        return Comment.objects.none()
+            queryset = queryset.filter(article_id=article_id)
+        if user_id:
+            queryset = queryset.filter(user_id=user_id)
+        
+        return queryset.select_related('article', 'user').order_by('-created_at')
 # Add to views.py
 class CommentDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Comment.objects.all()
@@ -207,8 +223,19 @@ class SuspendUserView(APIView):
     def post(self, request, user_id):
         try:
             user = User.objects.get(id=user_id)
-            user.is_active = False
-            user.save()
-            return Response({'message': 'User suspended'}, status=status.HTTP_200_OK)
+            if user.is_staff:
+                return Response(
+                    {'error': 'Cannot suspend admin users'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            user.delete()
+
+            return Response(
+                {'message': f'User account {"suspended" if not user.is_active else "activated"}'},
+                status=status.HTTP_200_OK
+            )
         except User.DoesNotExist:
-            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )

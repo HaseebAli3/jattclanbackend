@@ -49,18 +49,58 @@ class CategorySerializer(serializers.ModelSerializer):
         model = Category
         fields = ['id', 'name']
 
+# Add this new serializer for comment creation
+class CommentCreateSerializer(serializers.ModelSerializer):
+    article = serializers.PrimaryKeyRelatedField(queryset=Article.objects.all())
+    
+    class Meta:
+        model = Comment
+        fields = ['content', 'article', 'parent']
+        extra_kwargs = {
+            'content': {'required': True},
+            'article': {'required': True},
+            'parent': {'required': False}
+        }
+
+    def validate(self, data):
+        if not data.get('article'):
+            raise serializers.ValidationError("Article ID is required")
+        return data
+
+# Update the existing CommentSerializer
 class CommentSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     replies = serializers.SerializerMethodField()
+    article = serializers.SerializerMethodField()
+    likes = serializers.SerializerMethodField()
+    is_liked = serializers.SerializerMethodField()
 
     class Meta:
         model = Comment
-        fields = ['id', 'article', 'user', 'content', 'parent', 'replies', 'created_at']
+        fields = ['id', 'article', 'user', 'content', 'parent', 'replies', 
+                 'created_at', 'likes', 'is_liked']
+        read_only_fields = ['user', 'created_at']
 
     def get_replies(self, obj):
         if obj.replies.exists():
             return CommentSerializer(obj.replies.all(), many=True).data
         return []
+
+    def get_article(self, obj):
+        return {
+            'id': obj.article.id,
+            'title': obj.article.title,
+            'url': f'/articles/{obj.article.id}'
+        }
+
+    def get_likes(self, obj):
+        return obj.like_set.count()
+
+    def get_is_liked(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.like_set.filter(user=request.user).exists()
+        return False
 
 class ArticleSerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
