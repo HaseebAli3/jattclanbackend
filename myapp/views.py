@@ -86,7 +86,17 @@ class ProfileView(APIView):
         serializer = UserSerializer(request.user, context={'request': request})
         return Response(serializer.data)
 
-
+class UserListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAdminUser]
+    serializer_class = UserSerializer
+    queryset = User.objects.all().order_by('-date_joined')
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        search = self.request.query_params.get('search', None)
+        if search:
+            queryset = queryset.filter(username__icontains=search)
+        return queryset
 
 class CategoryListView(generics.ListCreateAPIView):
     queryset = Category.objects.all()
