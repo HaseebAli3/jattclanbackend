@@ -97,7 +97,21 @@ class UserListView(generics.ListAPIView):
         if search:
             queryset = queryset.filter(username__icontains=search)
         return queryset
+class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Category.objects.all()
+    serializer_class = CategorySerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
+    def get_permissions(self):
+        if self.request.method in ['PUT', 'DELETE']:
+            return [permissions.IsAdminUser()]
+        return [permissions.AllowAny()]
+
+    def perform_destroy(self, instance):
+        # Optional: Check if category has associated articles
+        if instance.article_set.exists():
+            raise PermissionDenied("Cannot delete category with associated articles")
+        instance.delete()
 class CategoryListView(generics.ListCreateAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
@@ -133,6 +147,7 @@ class ArticleListView(generics.ListCreateAPIView):
 class ArticleDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Article.objects.all()
     serializer_class = ArticleSerializer
+    parser_classes = [MultiPartParser, FormParser]
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def retrieve(self, request, *args, **kwargs):
@@ -140,6 +155,28 @@ class ArticleDetailView(generics.RetrieveUpdateDestroyAPIView):
         instance.views += 1
         instance.save()
         serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    def perform_update(self, serializer):
+        # Only allow the author or admin to update
+        if self.request.user == serializer.instance.author or self.request.user.is_staff:
+            serializer.save()
+        else:
+            raise PermissionDenied("You don't have permission to edit this article")
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        
+        # Handle file uploads separately
+        data = request.data.copy()
+        if 'thumbnail' not in data:
+            data['thumbnail'] = instance.thumbnail
+            
+        serializer = self.get_serializer(instance, data=data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        
         return Response(serializer.data)
 
 # Update the CommentCreateView
@@ -242,6 +279,29 @@ class SuspendUserView(APIView):
 
             return Response(
                 {'message': f'User account {"suspended" if not user.is_active else "activated"}'},
+                status=status.HTTP_200_OK
+            )
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+class MakeAdminView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request, user_id):
+        try:
+            user = User.objects.get(id=user_id)
+            if user.is_staff:
+                return Response(
+                    {'error': 'User is already an admin'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            user.is_staff = True
+            user.save()
+            return Response(
+                {'message': f'User {user.username} is now an admin'},
                 status=status.HTTP_200_OK
             )
         except User.DoesNotExist:

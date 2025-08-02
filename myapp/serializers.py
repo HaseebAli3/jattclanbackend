@@ -105,19 +105,35 @@ class CommentSerializer(serializers.ModelSerializer):
 class ArticleSerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
     category_id = serializers.PrimaryKeyRelatedField(
-        queryset=Category.objects.all(), source='category', write_only=True
+        queryset=Category.objects.all(), 
+        source='category', 
+        write_only=True,
+        required=False  # Make this optional for updates
     )
     author = UserSerializer(read_only=True)
     comments = CommentSerializer(many=True, read_only=True)
     likes = serializers.SerializerMethodField()
     views = serializers.IntegerField(read_only=True)
+    thumbnail = serializers.ImageField(required=False)  # Make thumbnail optional
 
     class Meta:
         model = Article
-        fields = ['id', 'title', 'thumbnail', 'content', 'category', 'category_id', 'author', 'comments', 'likes', 'views', 'created_at']
+        fields = ['id', 'title', 'thumbnail', 'content', 'category', 'category_id', 
+                 'author', 'comments', 'likes', 'views', 'created_at', 'updated_at']
 
     def get_likes(self, obj):
         return obj.like_set.count()
+
+    def update(self, instance, validated_data):
+        # Handle thumbnail separately
+        thumbnail = validated_data.pop('thumbnail', None)
+        if thumbnail:
+            # Delete old thumbnail if exists
+            if instance.thumbnail:
+                instance.thumbnail.delete()
+            instance.thumbnail = thumbnail
+        
+        return super().update(instance, validated_data)
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     bio = serializers.CharField(write_only=True, required=False, allow_blank=True)
